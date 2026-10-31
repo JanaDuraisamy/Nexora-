@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/sdk-ts" },
+    { "path": "apps/core" },
+    { "path": "adapters/ev-opencode" },
+    { "path": "adapters/nila-copilot" },
+    { "path": "adapters/elio-relay" },
+    { "path": "adapters/rin-bridge" }
+  ]
+}
