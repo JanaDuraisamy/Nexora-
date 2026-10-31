@@ -1,39 +1,54 @@
 # @nexora/adapter-nila-copilot
 
-Adapter surface for **NILA** (VS Code / GitHub Copilot), the second Phase 0
-integration.
+Tier B, pull-only HTTP adapter for **NILA** (VS Code / GitHub Copilot).
 
-## Status
+## Implemented capability
 
-Skeleton. It defines typed calls against the real Core API and performs no
-simulated work.
+The adapter uses `@nexora/sdk-ts` to call the real Core API. The host supplies
+NILA's per-identity API credential at runtime; this package neither stores nor
+logs it. Use HTTPS outside local development and load the credential from the
+host's secret storage. Never put it in browser or extension-bundle source.
 
-## Wiring plan (not implemented yet)
+Supported pull operations:
 
-The editor-to-hub transport is an open decision:
+- `listMyTasks()` — tasks assigned to the credential's identity.
+- `getTask(id)`.
+- `claimTask(id, expectedVersion)` — atomic claim of an unassigned task.
+- `pollEvents(afterSeq, limit)` — resumable cursor over the durable event log.
+- `updateStatus(id, input)` — explicit task status mutation.
+- `note(input)` — non-domain note.
 
-- Option A: a small VS Code extension command that calls the Core API.
-- Option B: a local CLI that NILA invokes through the terminal.
-- Option C: a Copilot MCP server exposing `nexora_*` tools.
+The server derives the actor from the NILA credential; callers do not configure
+an identity UUID. Errors are returned to the caller. The adapter does not retry
+automatically; callers may retry safe reads, and should recover a timed-out
+claim by re-reading the task before retrying with its current version.
 
-Whichever transport is chosen must carry a bearer token from the user's local
-environment and must never embed a service-role key in the extension bundle.
+## Transport boundary and limitations
+
+This package implements outbound HTTP calls only. It does not include a VS Code
+extension, Copilot API integration, MCP server, push notifications, polling
+worker, or remote-trigger mechanism. No unsupported VS Code/Copilot API is
+assumed. A host must explicitly invoke these methods and provide the credential
+from its local secret provider; editor-specific secret storage and command
+registration require a separate transport implementation.
 
 ## Usage
 
 ```ts
-import { NexoraClient } from "@nexora/sdk-ts";
 import { NilaCopilotAdapter } from "@nexora/adapter-nila-copilot";
 
-const client = new NexoraClient({
-  baseUrl: process.env.NEXORA_API_URL!,
-  apiToken: process.env.NEXORA_API_TOKEN,
-});
+export async function pollNila(
+  apiUrl: string,
+  apiToken: string,
+  savedCursor?: number,
+) {
+  const adapter = new NilaCopilotAdapter({ apiUrl, apiToken });
 
-const adapter = new NilaCopilotAdapter({
-  client,
-  identityId: process.env.NEXORA_NILA_IDENTITY_ID!,
-});
-
-await adapter.reportNote("Started task implementation.", "phase-0");
+  const { items } = await adapter.listMyTasks();
+  const eventPage = await adapter.pollEvents(savedCursor);
+  return { items, eventPage };
+}
 ```
+
+The host passes the credential from its local secret provider; this library does
+not implement editor-specific storage or command registration.

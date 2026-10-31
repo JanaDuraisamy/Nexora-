@@ -178,6 +178,16 @@ recorded as a new decision rather than edited into history.
 - Health and readiness endpoints; database readiness fails closed.
 - Optimistic concurrency on aggregates; append-only history for recovery.
 - RLS as a second line of defence for direct clients.
+
+## Implementation reconciliation note (2026-10-31)
+
+The proposal text above and the original reference seed labeled NILA as Tier A.
+Jana has directed the Phase 0 identity implementation to treat NILA as Tier B:
+a pull-only process/extension bridge using the typed HTTP API. The seed and
+Phase 0 specification reflect that intended identity design; EV remains Tier
+A. This note records the mismatch without rewriting or approving the proposal.
+ADR-001 remains **PROPOSED**; any formal architectural resolution remains for
+Jana to decide separately.
 - Open security work is tracked explicitly in the Phase 0 spec and this ADR.
 
 ## Alternatives considered

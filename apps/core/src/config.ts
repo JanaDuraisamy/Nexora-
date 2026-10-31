@@ -18,11 +18,6 @@ const envSchema = z.object({
   DATABASE_URL: optionalString,
   DATABASE_SSL: z.enum(["disable", "require"]).default("require"),
   CORS_ORIGINS: z.string().default("http://localhost:5173"),
-  NEXORA_API_TOKEN: z.preprocess(
-    (value) =>
-      typeof value === "string" && value.trim().length === 0 ? undefined : value,
-    z.string().min(16, "NEXORA_API_TOKEN must be at least 16 characters").optional(),
-  ),
 });
 
 export type NodeEnvironment = "development" | "test" | "production";
@@ -35,7 +30,6 @@ export interface AppConfig {
   databaseUrl: string | null;
   databaseSsl: "disable" | "require";
   corsOrigins: string[];
-  apiToken: string | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -58,15 +52,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     corsOrigins: values.CORS_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter((origin) => origin.length > 0),
-    apiToken: values.NEXORA_API_TOKEN ?? null,
   };
 
   if (config.nodeEnv === "production") {
     if (config.databaseUrl === null) {
       throw new Error("DATABASE_URL is required when NODE_ENV=production");
-    }
-    if (config.apiToken === null) {
-      throw new Error("NEXORA_API_TOKEN is required when NODE_ENV=production");
     }
   }
 

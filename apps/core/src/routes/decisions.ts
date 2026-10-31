@@ -7,8 +7,12 @@ import {
 } from "@nexora/contracts";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import type { Database } from "../db.js";
-import { requireActiveIdentity, requirePermission } from "../http/authorization.js";
+import type { DatabasePort } from "../db.js";
+import { currentActor } from "../http/actor.js";
+import {
+  requireActiveIdentity,
+  requirePermission,
+} from "../http/authorization.js";
 import { conflict, notFound } from "../http/errors.js";
 import { parseInput } from "../http/validation.js";
 import {
@@ -22,7 +26,7 @@ import { appendEvent } from "../repositories/events.js";
 const idParamsSchema = z.object({ id: z.uuid() });
 
 export interface DecisionRoutesOptions {
-  db: Database;
+  db: DatabasePort;
 }
 
 export const decisionRoutes: FastifyPluginAsync<DecisionRoutesOptions> = async (
@@ -30,18 +34,19 @@ export const decisionRoutes: FastifyPluginAsync<DecisionRoutesOptions> = async (
   options,
 ) => {
   app.post("/decisions", async (request, reply) => {
+    const actor = currentActor(request);
     const input = parseInput(proposeDecisionInputSchema, request.body);
 
     const decision = await options.db.withTransaction(async (q) => {
-      await requireActiveIdentity(q, input.proposedBy);
-      await requirePermission(q, input.proposedBy, "decision", "write");
+      await requireActiveIdentity(q, actor.id);
+      await requirePermission(q, actor.id, "decision", "write");
 
-      const created = await insertDecision(q, input);
+      const created = await insertDecision(q, input, actor.id);
       await appendEvent(q, {
         type: "decision.proposed",
         aggregateType: "decision",
         aggregateId: created.id,
-        actorId: input.proposedBy,
+        actorId: actor.id,
         payload: {
           title: created.title,
           adrPath: created.adrPath,
@@ -61,28 +66,46 @@ export const decisionRoutes: FastifyPluginAsync<DecisionRoutesOptions> = async (
   });
 
   app.get("/decisions", async (request) => {
+    const actor = currentActor(request);
     const query = parseInput(listDecisionsQuerySchema, request.query);
+
+    await requirePermission(options.db, actor.id, "decision", "read");
     const items = await listDecisions(options.db, query);
     return decisionListSchema.parse({ items });
   });
 
   app.get("/decisions/:id", async (request) => {
+    const actor = currentActor(request);
     const { id } = parseInput(idParamsSchema, request.params);
+
     const decision = await findDecisionById(options.db, id);
     if (!decision) {
       throw notFound(`Decision ${id} was not found`);
     }
 
+    // A proposer may always see their own decision, mirroring the RLS select
+    // policy. Everyone else needs an explicit read grant.
+    if (decision.proposedBy !== actor.id) {
+      await requirePermission(options.db, actor.id, "decision", "read", id);
+    }
+
     return decisionSchema.parse(decision);
   });
 
+  /**
+   * Approve or reject a decision.
+   *
+   * The deciding identity is the authenticated actor; the body cannot name a
+   * different decider. Approval requires `decision:approve` on the decision.
+   */
   app.post("/decisions/:id/decide", async (request) => {
+    const actor = currentActor(request);
     const { id } = parseInput(idParamsSchema, request.params);
     const input = parseInput(decideDecisionInputSchema, request.body);
 
     const decision = await options.db.withTransaction(async (q) => {
-      await requireActiveIdentity(q, input.decidedBy);
-      await requirePermission(q, input.decidedBy, "decision", "approve", id);
+      await requireActiveIdentity(q, actor.id);
+      await requirePermission(q, actor.id, "decision", "approve", id);
 
       const current = await findDecisionById(q, id);
       if (!current) {
@@ -108,7 +131,7 @@ export const decisionRoutes: FastifyPluginAsync<DecisionRoutesOptions> = async (
         id,
         input.status,
         input.rationale,
-        input.decidedBy,
+        actor.id,
         input.expectedVersion ?? null,
       );
       if (!updated) {
@@ -119,7 +142,7 @@ export const decisionRoutes: FastifyPluginAsync<DecisionRoutesOptions> = async (
         type: "decision.decided",
         aggregateType: "decision",
         aggregateId: id,
-        actorId: input.decidedBy,
+        actorId: actor.id,
         payload: {
           status: updated.status,
           resolution: updated.resolution,

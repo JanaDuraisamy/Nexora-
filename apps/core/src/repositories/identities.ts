@@ -1,4 +1,4 @@
-import type { CreateIdentityInput, Identity } from "@nexora/contracts";
+import type { CreateIdentityData, Identity } from "@nexora/contracts";
 import type { Queryable } from "../db.js";
 
 interface IdentityRow {
@@ -62,7 +62,7 @@ export async function findIdentityByHandle(
 
 export async function createIdentity(
   q: Queryable,
-  input: CreateIdentityInput,
+  input: CreateIdentityData,
 ): Promise<Identity> {
   const rows = await q.query<IdentityRow>(
     `insert into nexora.identities

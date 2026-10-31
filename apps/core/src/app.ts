@@ -3,8 +3,16 @@ import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
 } from "fastify";
+import {
+  DatabaseCredentialDirectory,
+  type CredentialDirectory,
+} from "./auth/credentials.js";
 import type { AppConfig } from "./config.js";
-import { Database, DatabaseNotConfiguredError } from "./db.js";
+import {
+  Database,
+  DatabaseNotConfiguredError,
+  type DatabasePort,
+} from "./db.js";
 import { createAuthHook } from "./http/auth.js";
 import { ApiError } from "./http/errors.js";
 import { healthRoutes } from "./routes/health.js";
@@ -13,7 +21,9 @@ import { v1Routes } from "./routes/index.js";
 export interface BuildAppOptions {
   config: AppConfig;
   /** Injectable database, used by tests to avoid real connections. */
-  db?: Database;
+  db?: DatabasePort;
+  /** Injectable credential store, used by unit tests without a database. */
+  credentialDirectory?: CredentialDirectory;
 }
 
 interface PgError {
@@ -39,12 +49,18 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     bodyLimit: 1_048_576,
   });
 
+  // Set by the auth hook for every /v1 request that resolves to an identity.
+  app.decorateRequest("actor", null);
+
   await app.register(cors, {
     origin: config.corsOrigins,
     methods: ["GET", "POST", "OPTIONS"],
   });
 
-  app.addHook("onRequest", createAuthHook(config));
+  app.addHook("onRequest", createAuthHook(
+    options.credentialDirectory ?? new DatabaseCredentialDirectory(db),
+    config,
+  ));
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ApiError) {

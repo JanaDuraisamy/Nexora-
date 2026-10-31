@@ -1,7 +1,6 @@
 import type { HealthResponse, ReadinessResponse } from "@nexora/contracts";
-import { NexoraApiError } from "@nexora/sdk-ts";
 import { useCallback, useEffect, useState } from "react";
-import { apiBaseUrl, client } from "./client";
+import { apiBaseUrl, fetchHealth, fetchReadiness } from "./client";
 
 interface Snapshot {
   health: HealthResponse | null;
@@ -22,8 +21,8 @@ export default function App() {
     setError(null);
 
     const [healthResult, readinessResult] = await Promise.allSettled([
-      client.health(),
-      client.readiness(),
+      fetchHealth(),
+      fetchReadiness(),
     ]);
 
     const next: Snapshot = { health: null, readiness: null };
@@ -141,10 +140,6 @@ export default function App() {
 }
 
 function describeError(error: unknown): string {
-  if (error instanceof NexoraApiError) {
-    return `${error.code}: ${error.message}`;
-  }
-
   return error instanceof Error ? error.message : "Unknown error";
 }
 

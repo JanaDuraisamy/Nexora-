@@ -33,7 +33,7 @@ values
     'nila',
     'NILA',
     'ai_agent',
-    'tier_a',
+    'tier_b',
     'active',
     'nila-copilot',
     '{"family":"nexora","phase":"0"}'::jsonb
@@ -58,7 +58,9 @@ values
     'rin-bridge',
     '{"family":"nexora","phase":"0"}'::jsonb
   )
-on conflict (handle) do nothing;
+on conflict (handle) do update
+  set tier = excluded.tier
+  where nexora.identities.handle = 'nila';
 
 -- Explicit Phase 0 grants. Jana (owner) needs no rows: owner authority is part
 -- of nexora.has_permission by design.

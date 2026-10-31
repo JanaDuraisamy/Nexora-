@@ -9,7 +9,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("NexoraClient", () => {
-  it("calls the health endpoint with the service token", async () => {
+  it("calls the health endpoint with the identity credential", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         status: "ok",
@@ -117,5 +117,99 @@ describe("NexoraClient", () => {
     });
 
     await expect(client.health()).rejects.toBeInstanceOf(NexoraApiError);
+  });
+
+  it("sends an idempotency key when creating a task", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        id: "00000000-0000-4000-8000-000000000010",
+        title: "Task",
+        description: null,
+        status: "backlog",
+        priority: "normal",
+        createdBy: "00000000-0000-4000-8000-000000000002",
+        assigneeId: null,
+        parentTaskId: null,
+        dueAt: null,
+        metadata: {},
+        version: 1,
+        createdAt: "2026-10-31T10:00:00.000Z",
+        updatedAt: "2026-10-31T10:00:00.000Z",
+      }),
+    );
+
+    const client = new NexoraClient({
+      baseUrl: "http://127.0.0.1:4000",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    await client.tasks.create({ title: "Task" }, { idempotencyKey: "retry-0001" });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["Idempotency-Key"]).toBe("retry-0001");
+    expect(JSON.parse(String(init.body))).toMatchObject({ title: "Task" });
+  });
+
+  it("sends notes without an actor field", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        seq: 1,
+        id: "00000000-0000-4000-8000-000000000020",
+        type: "system.note",
+        aggregateType: "system",
+        aggregateId: null,
+        actorId: "00000000-0000-4000-8000-000000000002",
+        payload: { message: "hello", topic: null },
+        correlationId: null,
+        causationId: null,
+        schemaVersion: 1,
+        visibility: "internal",
+        occurredAt: "2026-10-31T10:00:00.000Z",
+        recordedAt: "2026-10-31T10:00:00.000Z",
+      }),
+    );
+
+    const client = new NexoraClient({
+      baseUrl: "http://127.0.0.1:4000",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    await client.events.note({ message: "hello" });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.actorId).toBeUndefined();
+    expect(body.message).toBe("hello");
+  });
+
+  it("revokes a permission by id", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        id: "00000000-0000-4000-8000-000000000030",
+        identityId: "00000000-0000-4000-8000-000000000002",
+        resourceType: "task",
+        resourceId: null,
+        action: "write",
+        grantedBy: "00000000-0000-4000-8000-000000000001",
+        grantedAt: "2026-10-31T10:00:00.000Z",
+        expiresAt: null,
+        revokedAt: "2026-10-31T11:00:00.000Z",
+        revokedBy: "00000000-0000-4000-8000-000000000001",
+      }),
+    );
+
+    const client = new NexoraClient({
+      baseUrl: "http://127.0.0.1:4000",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    await client.permissions.revoke("00000000-0000-4000-8000-000000000030");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+    expect(url.pathname).toBe(
+      "/v1/permissions/00000000-0000-4000-8000-000000000030/revoke",
+    );
+    expect(init.method).toBe("POST");
   });
 });

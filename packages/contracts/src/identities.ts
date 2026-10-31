@@ -17,7 +17,7 @@ export type IdentityKind = z.infer<typeof identityKindSchema>;
  *
  * - owner:  Jana, final decision authority.
  * - tier_a: direct API integration (native tooling).
- * - tier_b: process/extension bridge (reserved; no Phase 0 consumer yet).
+ * - tier_b: process/extension bridge; Phase 0 NILA integration is pull-only.
  * - tier_c: human-relay adapter (a human carries messages to/from the identity).
  */
 export const IDENTITY_TIERS = ["owner", "tier_a", "tier_b", "tier_c"] as const;
@@ -51,7 +51,9 @@ export const createIdentityInputSchema = z.strictObject({
   adapterKey: z.string().trim().min(1).max(64).nullable().default(null),
   metadata: metadataSchema.default({}),
 });
-export type CreateIdentityInput = z.infer<typeof createIdentityInputSchema>;
+export type CreateIdentityInput = z.input<typeof createIdentityInputSchema>;
+/** Parsed identity input with defaults applied. */
+export type CreateIdentityData = z.output<typeof createIdentityInputSchema>;
 
 export const identityListSchema = z.object({
   items: z.array(identitySchema),

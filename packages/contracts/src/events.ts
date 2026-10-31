@@ -3,6 +3,8 @@ import {
   identifierSchema,
   isoDateTimeSchema,
   metadataSchema,
+  optionalText,
+  requiredText,
 } from "./primitives.js";
 
 /**
@@ -65,19 +67,26 @@ export const eventEnvelopeSchema = z.object({
 });
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
 
-export const appendEventInputSchema = z.strictObject({
-  type: eventTypeSchema,
-  aggregateType: aggregateTypeSchema,
-  aggregateId: identifierSchema.nullable().default(null),
-  actorId: identifierSchema,
-  payload: metadataSchema.default({}),
+/**
+ * Standalone note submission.
+ *
+ * Only non-domain notes may be appended outside Core business methods. Domain
+ * aggregates (tasks, decisions, permissions, identities) are written by the
+ * route handlers that own those invariants, which emit their events in the same
+ * transaction. The actor is never part of this payload: it is derived from the
+ * verified credential.
+ */
+export const appendNoteInputSchema = z.strictObject({
+  message: requiredText(10_000),
+  topic: optionalText(120).nullable().default(null),
+  metadata: metadataSchema.default({}),
   correlationId: identifierSchema.nullable().default(null),
   causationId: identifierSchema.nullable().default(null),
-  schemaVersion: z.number().int().positive().default(EVENT_SCHEMA_VERSION),
   visibility: eventVisibilitySchema.default("internal"),
-  occurredAt: isoDateTimeSchema.optional(),
 });
-export type AppendEventInput = z.infer<typeof appendEventInputSchema>;
+export type AppendNoteInput = z.input<typeof appendNoteInputSchema>;
+/** Parsed note input with defaults applied. */
+export type AppendNoteData = z.output<typeof appendNoteInputSchema>;
 
 export const eventListSchema = z.object({
   items: z.array(eventEnvelopeSchema),

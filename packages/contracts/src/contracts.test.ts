@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  appendEventInputSchema,
+  appendNoteInputSchema,
+  assignTaskInputSchema,
   canTransitionTaskStatus,
+  claimTaskInputSchema,
   createIdentityInputSchema,
   createTaskInputSchema,
   decideDecisionInputSchema,
+  grantPermissionInputSchema,
   identitySchema,
   taskSchema,
 } from "./index.js";
@@ -55,34 +58,17 @@ describe("identity contracts", () => {
 });
 
 describe("event contracts", () => {
-  it("defaults append input to schema version 1 and internal visibility", () => {
-    const parsed = appendEventInputSchema.parse({
-      type: "system.note",
-      aggregateType: "system",
-      actorId: IDENTITY_ID,
-    });
+  it("defaults a note to internal visibility and a null topic", () => {
+    const parsed = appendNoteInputSchema.parse({ message: "Reviewed the build" });
 
-    expect(parsed.schemaVersion).toBe(1);
     expect(parsed.visibility).toBe("internal");
-    expect(parsed.aggregateId).toBeNull();
-    expect(parsed.payload).toEqual({});
+    expect(parsed.topic).toBeNull();
+    expect(parsed.metadata).toEqual({});
   });
 
-  it("rejects unknown event types", () => {
-    const result = appendEventInputSchema.safeParse({
-      type: "task.exploded",
-      aggregateType: "task",
-      actorId: IDENTITY_ID,
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects malformed aggregate identifiers", () => {
-    const result = appendEventInputSchema.safeParse({
-      type: "task.created",
-      aggregateType: "task",
-      aggregateId: "not-a-uuid",
+  it("has no actor field: identity is derived from the credential", () => {
+    const result = appendNoteInputSchema.safeParse({
+      message: "note",
       actorId: IDENTITY_ID,
     });
 
@@ -101,12 +87,39 @@ describe("task contracts", () => {
   it("defaults new task priority and status fields", () => {
     const parsed = createTaskInputSchema.parse({
       title: "Wire the health endpoint",
-      createdBy: IDENTITY_ID,
     });
 
     expect(parsed.priority).toBe("normal");
     expect(parsed.assigneeId).toBeNull();
     expect(parsed.description).toBeNull();
+  });
+
+  it("rejects a client-supplied creator", () => {
+    const result = createTaskInputSchema.safeParse({
+      title: "Task",
+      createdBy: IDENTITY_ID,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("requires an assignee field so release is explicit", () => {
+    expect(
+      assignTaskInputSchema.safeParse({ expectedVersion: 1 }).success,
+    ).toBe(false);
+    expect(
+      assignTaskInputSchema.safeParse({ assigneeId: null, expectedVersion: 1 })
+        .success,
+    ).toBe(true);
+  });
+
+  it("validates claim input", () => {
+    expect(claimTaskInputSchema.safeParse({ expectedVersion: 2 }).success).toBe(
+      true,
+    );
+    expect(claimTaskInputSchema.safeParse({ expectedVersion: 0 }).success).toBe(
+      false,
+    );
   });
 
   it("keeps task versions positive", () => {
@@ -132,12 +145,48 @@ describe("task contracts", () => {
 
 describe("decision contracts", () => {
   it("only permits approve or reject decisions", () => {
-    const input = {
-      rationale: "Approved during Phase 0 review.",
-      decidedBy: IDENTITY_ID,
-    };
+    const input = { rationale: "Approved during Phase 0 review." };
 
-    expect(decideDecisionInputSchema.safeParse({ ...input, status: "approved" }).success).toBe(true);
-    expect(decideDecisionInputSchema.safeParse({ ...input, status: "superseded" }).success).toBe(false);
+    expect(
+      decideDecisionInputSchema.safeParse({ ...input, status: "approved" })
+        .success,
+    ).toBe(true);
+    expect(
+      decideDecisionInputSchema.safeParse({ ...input, status: "superseded" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("does not accept a decider in the body", () => {
+    const result = decideDecisionInputSchema.safeParse({
+      status: "approved",
+      rationale: "Looks good",
+      decidedBy: IDENTITY_ID,
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("permission contracts", () => {
+  it("defaults a grant to global scope with no expiry", () => {
+    const parsed = grantPermissionInputSchema.parse({
+      identityId: IDENTITY_ID,
+      resourceType: "task",
+      action: "read",
+    });
+
+    expect(parsed.resourceId).toBeNull();
+    expect(parsed.expiresAt).toBeNull();
+  });
+
+  it("requires a known resource and action", () => {
+    const result = grantPermissionInputSchema.safeParse({
+      identityId: IDENTITY_ID,
+      resourceType: "database",
+      action: "drop",
+    });
+
+    expect(result.success).toBe(false);
   });
 });

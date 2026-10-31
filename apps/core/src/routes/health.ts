@@ -1,10 +1,10 @@
 import { healthResponseSchema, readinessResponseSchema } from "@nexora/contracts";
 import type { FastifyPluginAsync } from "fastify";
-import type { Database } from "../db.js";
+import type { DatabasePort } from "../db.js";
 import { SERVICE_NAME, SERVICE_VERSION } from "../version.js";
 
 export interface HealthRoutesOptions {
-  db: Database;
+  db: DatabasePort;
   startedAt: number;
 }
 

@@ -5,16 +5,13 @@ import type { NexoraClient } from "@nexora/sdk-ts";
  * Tier C (human relay) bridge for RIN.
  *
  * EV has no direct access to RIN's context. Information attributed to RIN
- * reaches the hub only through Jana. The event actor is therefore the relaying
- * human, and the payload records `originIdentity: "rin"` with
- * `channel: "human_relay"`.
+ * reaches the hub only through a human. The event actor is the human bound to
+ * the client credential — verified by the server — and the payload records the
+ * assertion `originIdentity: "rin"` with `channel: "human_relay"`.
+ *
+ * The credential passed to the client must belong to the relaying human (Jana in
+ * Phase 0). Origin attribution is an explicit, auditable claim; the actor is not.
  */
-export interface RinBridgeOptions {
-  client: NexoraClient;
-  /** UUID of the human identity relaying the message, normally Jana. */
-  relayedByIdentityId: string;
-}
-
 export interface RelayedNoteInput {
   message: string;
   topic?: string;
@@ -22,16 +19,10 @@ export interface RelayedNoteInput {
 }
 
 export class RinBridge {
-  readonly relayedByIdentityId: string;
   private readonly client: NexoraClient;
 
-  constructor(options: RinBridgeOptions) {
-    if (options.relayedByIdentityId.length === 0) {
-      throw new Error("A relaying human identity is required");
-    }
-
-    this.relayedByIdentityId = options.relayedByIdentityId;
-    this.client = options.client;
+  constructor(client: NexoraClient) {
+    this.client = client;
   }
 
   submitNote(input: RelayedNoteInput): Promise<EventEnvelope> {
@@ -40,21 +31,14 @@ export class RinBridge {
       throw new Error("A relayed message cannot be empty");
     }
 
-    return this.client.events.append({
-      type: "system.note",
-      aggregateType: "system",
-      aggregateId: null,
-      actorId: this.relayedByIdentityId,
-      payload: {
+    return this.client.events.note({
+      message,
+      topic: input.topic ?? null,
+      metadata: {
         originIdentity: "rin",
         channel: "human_relay",
-        message,
-        ...(input.topic === undefined ? {} : { topic: input.topic }),
       },
       correlationId: input.correlationId ?? null,
-      causationId: null,
-      schemaVersion: 1,
-      visibility: "internal",
     });
   }
 }

@@ -9,6 +9,20 @@ export interface Queryable {
   ): Promise<T[]>;
 }
 
+/**
+ * Database surface required by the Core API.
+ *
+ * An interface (rather than the concrete `Database` class) lets integration
+ * tests drive the real routes against an in-process PostgreSQL build without a
+ * network socket.
+ */
+export interface DatabasePort extends Queryable {
+  readonly configured: boolean;
+  withTransaction<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
+  ping(): Promise<number>;
+  close(): Promise<void>;
+}
+
 export interface DatabaseOptions {
   connectionString: string;
   ssl: "disable" | "require";
@@ -33,7 +47,7 @@ class ClientQueryable implements Queryable {
   }
 }
 
-export class Database implements Queryable {
+export class Database implements DatabasePort {
   private readonly pool: Pool | null;
 
   constructor(options: DatabaseOptions | null) {

@@ -1,6 +1,7 @@
 import type {
-  AppendEventInput,
+  AggregateType,
   EventEnvelope,
+  EventType,
   EventVisibility,
 } from "@nexora/contracts";
 import type { Queryable } from "../db.js";
@@ -27,6 +28,25 @@ const COLUMNS = `
   recorded_at
 `;
 
+/**
+ * Event written by Core business methods.
+ *
+ * `actorId` is always the authenticated identity supplied by the caller inside
+ * the same transaction. There is no request-body path to this type.
+ */
+export interface EventDraft {
+  type: EventType;
+  aggregateType: AggregateType;
+  aggregateId: string | null;
+  actorId: string | null;
+  payload: Record<string, unknown>;
+  correlationId: string | null;
+  causationId: string | null;
+  schemaVersion: number;
+  visibility: EventVisibility;
+  occurredAt?: string | null;
+}
+
 export interface EventFilters {
   aggregateType?: string;
   aggregateId?: string;
@@ -36,13 +56,14 @@ export interface EventFilters {
 
 export async function appendEvent(
   q: Queryable,
-  input: AppendEventInput,
+  input: EventDraft,
 ): Promise<EventEnvelope> {
   const rows = await q.query<EventRow>(
     `insert into nexora.events
        (type, aggregate_type, aggregate_id, actor_id, payload, correlation_id,
         causation_id, schema_version, visibility, occurred_at)
-     values ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, coalesce($10, now()))
+     values ($1, $2::nexora.aggregate_type, $3, $4, $5::jsonb, $6, $7, $8,
+             $9::nexora.event_visibility, coalesce($10::timestamptz, now()))
      returning ${COLUMNS}`,
     [
       input.type,
@@ -75,17 +96,17 @@ export async function listEvents(
 
   if (filters.aggregateType !== undefined) {
     values.push(filters.aggregateType);
-    conditions.push(`aggregate_type = $${values.length}`);
+    conditions.push(`aggregate_type = $${values.length}::nexora.aggregate_type`);
   }
 
   if (filters.aggregateId !== undefined) {
     values.push(filters.aggregateId);
-    conditions.push(`aggregate_id = $${values.length}`);
+    conditions.push(`aggregate_id = $${values.length}::uuid`);
   }
 
   if (filters.afterSeq !== undefined) {
     values.push(filters.afterSeq);
-    conditions.push(`seq > $${values.length}`);
+    conditions.push(`seq > $${values.length}::bigint`);
   }
 
   values.push(filters.limit);

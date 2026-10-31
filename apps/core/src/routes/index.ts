@@ -1,13 +1,14 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { Database } from "../db.js";
+import type { DatabasePort } from "../db.js";
 import { decisionRoutes } from "./decisions.js";
 import { eventRoutes } from "./events.js";
 import { identityRoutes } from "./identities.js";
+import { meRoutes } from "./me.js";
 import { permissionRoutes } from "./permissions.js";
 import { taskRoutes } from "./tasks.js";
 
 export interface V1RoutesOptions {
-  db: Database;
+  db: DatabasePort;
 }
 
 export const v1Routes: FastifyPluginAsync<V1RoutesOptions> = async (
@@ -16,6 +17,7 @@ export const v1Routes: FastifyPluginAsync<V1RoutesOptions> = async (
 ) => {
   await app.register(
     async (scope) => {
+      await scope.register(meRoutes, { db: options.db });
       await scope.register(identityRoutes, { db: options.db });
       await scope.register(eventRoutes, { db: options.db });
       await scope.register(taskRoutes, { db: options.db });

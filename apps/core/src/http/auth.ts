@@ -1,14 +1,20 @@
-import { timingSafeEqual } from "node:crypto";
 import type { onRequestAsyncHookHandler } from "fastify";
 import type { AppConfig } from "../config.js";
+import type { CredentialDirectory } from "../auth/credentials.js";
 import { unauthorized } from "./errors.js";
 
 /**
- * Phase 0 authentication is a single shared service token for the hub.
- * Per-identity credentials and token rotation are Phase 1 work; see
- * docs/specs/phase-0-foundation.md before exposing this API publicly.
+ * Bearer authentication for the versioned API.
+ *
+ * Every `/v1` request must present a per-identity credential. The token is
+ * resolved server-side and the resulting identity is the only source of actor
+ * truth for the rest of the request. Health endpoints stay public.
+ *
+ * Supabase JWTs are a separate path used by direct database clients; they are
+ * verified by Supabase and mapped through `nexora.identities.auth_user_id`.
  */
 export function createAuthHook(
+  directory: CredentialDirectory,
   config: AppConfig,
 ): onRequestAsyncHookHandler {
   return async (request) => {
@@ -16,31 +22,31 @@ export function createAuthHook(
       return;
     }
 
-    if (config.apiToken === null) {
-      if (config.nodeEnv === "production") {
-        throw unauthorized("NEXORA_API_TOKEN is not configured");
-      }
-      return;
-    }
-
     const header = request.headers.authorization;
     const provided =
       typeof header === "string" && header.startsWith("Bearer ")
-        ? header.slice("Bearer ".length)
+        ? header.slice("Bearer ".length).trim()
         : null;
 
-    if (provided === null || !constantTimeEquals(provided, config.apiToken)) {
+    if (provided === null || provided.length === 0) {
       throw unauthorized("A valid bearer token is required");
     }
+
+    const actor = await directory.resolve(provided);
+    if (actor === null) {
+      // Deliberately identical for unknown, revoked and expired credentials.
+      throw unauthorized("A valid bearer token is required");
+    }
+
+    request.actor = actor;
+
+    if (config.nodeEnv === "test") {
+      return;
+    }
+
+    request.log.debug(
+      { actorId: actor.id, credentialId: actor.credentialId },
+      "authenticated request",
+    );
   };
-}
-
-function constantTimeEquals(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left, "utf8");
-  const rightBuffer = Buffer.from(right, "utf8");
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(leftBuffer, rightBuffer);
 }

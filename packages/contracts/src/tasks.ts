@@ -60,6 +60,13 @@ export const taskSchema = z.object({
 });
 export type Task = z.infer<typeof taskSchema>;
 
+/**
+ * Task creation input.
+ *
+ * `createdBy` is deliberately absent: the server derives the creator from the
+ * verified credential. An idempotency key may be supplied in the
+ * `Idempotency-Key` header; see `createTaskRequest`.
+ */
 export const createTaskInputSchema = z.strictObject({
   title: requiredText(200),
   description: optionalText(5000).nullable().default(null),
@@ -68,16 +75,29 @@ export const createTaskInputSchema = z.strictObject({
   parentTaskId: identifierSchema.nullable().default(null),
   dueAt: isoDateTimeSchema.nullable().default(null),
   metadata: metadataSchema.default({}),
-  createdBy: identifierSchema,
 });
-export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
+export type CreateTaskInput = z.input<typeof createTaskInputSchema>;
+/** Parsed task input with defaults applied; creator is added separately. */
+export type CreateTaskData = z.output<typeof createTaskInputSchema>;
 
 export const updateTaskStatusInputSchema = z.strictObject({
   status: taskStatusSchema,
   expectedVersion: z.number().int().positive(),
-  actorId: identifierSchema,
 });
 export type UpdateTaskStatusInput = z.infer<typeof updateTaskStatusInputSchema>;
+
+/** Reassign a task, or release it with `assigneeId: null`. */
+export const assignTaskInputSchema = z.strictObject({
+  assigneeId: identifierSchema.nullable(),
+  expectedVersion: z.number().int().positive(),
+});
+export type AssignTaskInput = z.infer<typeof assignTaskInputSchema>;
+
+/** Claim an unassigned task for the authenticated identity. */
+export const claimTaskInputSchema = z.strictObject({
+  expectedVersion: z.number().int().positive(),
+});
+export type ClaimTaskInput = z.infer<typeof claimTaskInputSchema>;
 
 export const taskListSchema = z.object({
   items: z.array(taskSchema),

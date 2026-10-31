@@ -53,7 +53,7 @@ packages/
   sdk-ts/             Typed TypeScript client
 adapters/
   ev-opencode/        Tier A — EV
-  nila-copilot/       Tier A — NILA
+  nila-copilot/       Tier B pull-only — NILA
   elio-relay/         Tier C — ELIO via Jana
   rin-bridge/         Tier C — RIN via Jana
 infra/
@@ -87,14 +87,17 @@ corepack pnpm test
 
 # 4. Configure the API
 cp apps/core/.env.example apps/core/.env
-#    Set DATABASE_URL / DATABASE_SSL and a NEXORA_API_TOKEN.
+#    Set DATABASE_URL / DATABASE_SSL.
 
-# 5. Run the Core API
+# 5. Issue a per-identity credential (plaintext shown once)
+npm --prefix apps/core run credential:issue -- --handle ev --label "EV local"
+
+# 6. Run the Core API
 corepack pnpm dev:core
 #    GET http://127.0.0.1:4000/health
 #    GET http://127.0.0.1:4000/health/ready
 
-# 6. Optional: run the console in another terminal
+# 7. Optional: run the console in another terminal
 corepack pnpm dev:console
 #    http://localhost:5173
 ```
@@ -137,13 +140,22 @@ the verification record in `docs/specs/phase-0-foundation.md`.
 | --- | --- |
 | `GET /health` | Liveness |
 | `GET /health/ready` | Database readiness; 503 when degraded |
-| `POST /v1/events` | Append a durable event |
-| `GET /v1/events` | Read event history |
-| `POST /v1/tasks` | Create a task and its event |
+| `GET /v1/whoami` | Identity bound to the presented credential |
+| `GET /v1/events` | Read event history (cursor pagination) |
+| `POST /v1/events` | Append a non-domain note; domain events are Core-only |
+| `POST /v1/tasks` | Create a task and its event (supports `Idempotency-Key`) |
 | `POST /v1/tasks/:id/status` | Transition a task with optimistic concurrency |
+| `POST /v1/tasks/:id/assign` | Assign or release a task |
+| `POST /v1/tasks/:id/claim` | Atomically claim an unassigned task |
 | `POST /v1/decisions` | Propose a decision |
 | `POST /v1/decisions/:id/decide` | Approve or reject (requires permission) |
+| `POST /v1/identities` | Create an identity (requires `identity:admin`) |
 | `GET /v1/identities`, `GET /v1/permissions` | Inspect identities and grants |
+| `POST /v1/permissions` | Grant a permission (requires `permission:admin`) |
+| `POST /v1/permissions/:id/revoke` | Revoke a grant (requires `permission:admin`) |
+
+Every `/v1` route requires a per-identity bearer credential. The acting identity
+is always derived server-side; request bodies cannot name a different actor.
 
 Full detail: [docs/specs/phase-0-foundation.md](docs/specs/phase-0-foundation.md).
 
@@ -151,22 +163,27 @@ Full detail: [docs/specs/phase-0-foundation.md](docs/specs/phase-0-foundation.md
 
 - Never commit `.env` files, tokens, API keys or database credentials.
 - The Supabase service role key lives only in the Core API server environment.
-- The Phase 0 API uses one shared bearer token and is **not** safe for public
-  exposure yet. Per-identity authentication is Phase 1 work.
-- RLS is enabled on all domain tables; direct authenticated clients are bounded
-  by the same permission function as the API.
+- Each identity has its own credential. Only a SHA-256 digest is stored, and the
+  plaintext is shown once by `credential:issue`.
+- The browser console never receives a credential; it only calls public health
+  endpoints.
+- RLS is enabled on all domain tables. Direct authenticated clients are
+  read-only and bounded by the same permission function as the API.
 
 ## Phase 0 boundaries
 
 Implemented: workspace, contracts, SDK, API skeleton, migrations, permission
-model, adapter skeletons, health endpoints, docs.
+model, per-identity credentials, task assignment and idempotency, adapter
+skeletons, health endpoints, docs.
 
-Not implemented: live RIN/ELIO channels, 3D house, realtime, per-identity auth,
-permission administration UI, production deployment topology.
+Not implemented: live RIN/ELIO channels, 3D house, realtime push, rate limiting,
+credential rotation UI, permission administration UI, production deployment
+topology.
 
 ## Documentation
 
 - [ADR-001 — Core architecture](docs/adr/ADR-001-core-architecture.md)
+- [ADR-002 — Per-identity credentials](docs/adr/ADR-002-identity-credentials.md)
 - [Phase 0 foundation spec](docs/specs/phase-0-foundation.md)
 - [Database infrastructure](infra/supabase/README.md)
 

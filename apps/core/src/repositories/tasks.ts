@@ -1,5 +1,5 @@
 import type {
-  CreateTaskInput,
+  CreateTaskData,
   Task,
   TaskPriority,
   TaskStatus,
@@ -35,19 +35,21 @@ export interface TaskFilters {
 
 export async function insertTask(
   q: Queryable,
-  input: CreateTaskInput,
+  input: CreateTaskData,
+  createdBy: string,
 ): Promise<Task> {
   const rows = await q.query<TaskRow>(
     `insert into nexora.tasks
        (title, description, priority, created_by, assignee_id, parent_task_id,
         due_at, metadata)
-     values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+     values ($1, $2, $3::nexora.task_priority, $4, $5, $6,
+             $7::timestamptz, $8::jsonb)
      returning ${COLUMNS}`,
     [
       input.title,
       input.description,
       input.priority,
-      input.createdBy,
+      createdBy,
       input.assigneeId,
       input.parentTaskId,
       input.dueAt,
@@ -80,12 +82,12 @@ export async function listTasks(
 
   if (filters.status !== undefined) {
     values.push(filters.status);
-    conditions.push(`status = $${values.length}`);
+    conditions.push(`status = $${values.length}::nexora.task_status`);
   }
 
   if (filters.assigneeId !== undefined) {
     values.push(filters.assigneeId);
-    conditions.push(`assignee_id = $${values.length}`);
+    conditions.push(`assignee_id = $${values.length}::uuid`);
   }
 
   values.push(filters.limit);
@@ -112,13 +114,47 @@ export async function updateTaskStatus(
 ): Promise<Task | null> {
   const rows = await q.query<TaskRow>(
     `update nexora.tasks
-        set status = $2,
+        set status = $2::nexora.task_status,
             version = version + 1,
             updated_at = now()
       where id = $1
         and version = $3
       returning ${COLUMNS}`,
     [id, status, expectedVersion],
+  );
+
+  const row = rows[0];
+  return row ? mapTask(row) : null;
+}
+
+export interface AssignTaskOptions {
+  /** When true the update only applies if the task is currently unassigned. */
+  requireUnassigned: boolean;
+}
+
+/**
+ * Atomically set `assignee_id` under an optimistic version check.
+ *
+ * `null` means either the version no longer matches or (for a claim) the task
+ * was already taken. Both are reported as conflicts by the route.
+ */
+export async function assignTask(
+  q: Queryable,
+  id: string,
+  assigneeId: string | null,
+  expectedVersion: number,
+  options: AssignTaskOptions,
+): Promise<Task | null> {
+  const rows = await q.query<TaskRow>(
+    `update nexora.tasks
+        set assignee_id = $2::uuid,
+            version = version + 1,
+            updated_at = now()
+      where id = $1
+        and version = $3
+        and ($4::boolean = false or assignee_id is null)
+      returning ${COLUMNS}`,
+    [id, assigneeId, expectedVersion, options.requireUnassigned],
   );
 
   const row = rows[0];

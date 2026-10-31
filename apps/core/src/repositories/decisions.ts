@@ -1,7 +1,7 @@
 import type {
   Decision,
   DecisionStatus,
-  ProposeDecisionInput,
+  ProposeDecisionData,
 } from "@nexora/contracts";
 import type { Queryable } from "../db.js";
 
@@ -29,7 +29,8 @@ const COLUMNS = `
 
 export async function insertDecision(
   q: Queryable,
-  input: ProposeDecisionInput,
+  input: ProposeDecisionData,
+  proposedBy: string,
 ): Promise<Decision> {
   const rows = await q.query<DecisionRow>(
     `insert into nexora.decisions
@@ -39,7 +40,7 @@ export async function insertDecision(
     [
       input.title,
       input.context,
-      input.proposedBy,
+      proposedBy,
       input.adrPath,
       input.supersedesId,
       JSON.stringify(input.metadata),
@@ -76,7 +77,7 @@ export async function listDecisions(
 
   if (filters.status !== undefined) {
     values.push(filters.status);
-    conditions.push(`status = $${values.length}`);
+    conditions.push(`status = $${values.length}::nexora.decision_status`);
   }
 
   values.push(filters.limit);
@@ -105,7 +106,7 @@ export async function applyDecision(
 ): Promise<Decision | null> {
   const rows = await q.query<DecisionRow>(
     `update nexora.decisions
-        set status = $2,
+        set status = $2::nexora.decision_status,
             resolution = $3,
             decided_by = $4,
             decided_at = now(),

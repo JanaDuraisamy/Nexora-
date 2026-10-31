@@ -41,5 +41,24 @@ export type PermissionList = z.infer<typeof permissionListSchema>;
 
 export const listPermissionsQuerySchema = z.object({
   identityId: identifierSchema.optional(),
+  includeRevoked: z
+    .union([z.boolean(), z.enum(["true", "false"])])
+    .transform((value) => value === true || value === "true")
+    .optional(),
 });
 export type ListPermissionsQuery = z.infer<typeof listPermissionsQuerySchema>;
+
+/**
+ * Grant a permission. `grantedBy` is derived from the verified credential; the
+ * caller must hold `permission:admin` (owner tier bypasses grants).
+ */
+export const grantPermissionInputSchema = z.strictObject({
+  identityId: identifierSchema,
+  resourceType: permissionResourceSchema,
+  resourceId: identifierSchema.nullable().default(null),
+  action: permissionActionSchema,
+  expiresAt: isoDateTimeSchema.nullable().default(null),
+});
+export type GrantPermissionInput = z.input<typeof grantPermissionInputSchema>;
+/** Parsed grant input with defaults applied. */
+export type GrantPermissionData = z.output<typeof grantPermissionInputSchema>;

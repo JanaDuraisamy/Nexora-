@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -b && npm --prefix apps/console run build",
     "typecheck": "tsc -b --pretty false && npm --prefix apps/console run typecheck",
-    "test": "npm --prefix packages/contracts test && npm --prefix packages/sdk-ts test && npm --prefix apps/core test",
+    "test": "npm --prefix packages/contracts test && npm --prefix packages/sdk-ts test && npm --prefix apps/core test && npm --prefix adapters/nila-copilot test",
     "dev:core": "npm --prefix apps/core run dev",
     "dev:console": "npm --prefix apps/console run dev",
     "db:push": "supabase db push --workdir infra",

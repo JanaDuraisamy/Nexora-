@@ -3,6 +3,7 @@
 | ADR | Title | Status | Date |
 | --- | --- | --- | --- |
 | [ADR-001](ADR-001-core-architecture.md) | Core Architecture for NEXORA Phase 0 | PROPOSED | 2026-10-31 |
+| [ADR-002](ADR-002-identity-credentials.md) | Per-identity API credentials | ACCEPTED | 2026-10-31 |
 
 ## Conventions
 

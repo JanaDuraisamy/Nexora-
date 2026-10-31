@@ -1,5 +1,7 @@
 import {
-  appendEventInputSchema,
+  appendNoteInputSchema,
+  assignTaskInputSchema,
+  claimTaskInputSchema,
   createIdentityInputSchema,
   createTaskInputSchema,
   decideDecisionInputSchema,
@@ -7,20 +9,25 @@ import {
   decisionSchema,
   eventEnvelopeSchema,
   eventListSchema,
+  grantPermissionInputSchema,
   healthResponseSchema,
   identityListSchema,
   identitySchema,
+  idempotencyKeySchema,
   listDecisionsQuerySchema,
   listEventsQuerySchema,
   listPermissionsQuerySchema,
   listTasksQuerySchema,
   permissionListSchema,
+  permissionSchema,
   proposeDecisionInputSchema,
   readinessResponseSchema,
   taskListSchema,
   taskSchema,
   updateTaskStatusInputSchema,
-  type AppendEventInput,
+  type AppendNoteInput,
+  type AssignTaskInput,
+  type ClaimTaskInput,
   type CreateIdentityInput,
   type CreateTaskInput,
   type DecideDecisionInput,
@@ -28,12 +35,14 @@ import {
   type DecisionList,
   type EventEnvelope,
   type EventList,
+  type GrantPermissionInput,
   type HealthResponse,
   type Identity,
   type IdentityList,
-  type ListEventsQuery,
   type ListDecisionsQuery,
+  type ListEventsQuery,
   type ListTasksQuery,
+  type Permission,
   type PermissionList,
   type ProposeDecisionInput,
   type ReadinessResponse,
@@ -47,7 +56,10 @@ import { NexoraApiError, toNexoraApiError } from "./errors.js";
 export interface NexoraClientOptions {
   /** Core API base URL, for example http://127.0.0.1:4000 */
   baseUrl: string;
-  /** Shared Phase 0 service token. Never ship this to a browser in production. */
+  /**
+   * Per-identity bearer credential. Each adapter and each deployment gets its
+   * own; the server derives the actor from it. Never ship one to a browser.
+   */
   apiToken?: string;
   /** Injectable fetch implementation, primarily for tests. */
   fetchImpl?: typeof fetch;
@@ -57,8 +69,15 @@ export interface NexoraClientOptions {
 interface RequestOptions {
   method?: "GET" | "POST";
   body?: unknown;
+  /** Extra request headers, e.g. `Idempotency-Key`. */
+  headers?: Record<string, string>;
   /** Status codes whose response body is still contract-valid (e.g. readiness 503). */
   acceptedStatuses?: readonly number[];
+}
+
+export interface CreateTaskOptions {
+  /** Replays return the original task instead of creating a duplicate. */
+  idempotencyKey?: string;
 }
 
 export class NexoraClient {
@@ -87,9 +106,17 @@ export class NexoraClient {
     });
   }
 
+  /** The identity bound to this client's credential. */
+  whoami(): Promise<Identity> {
+    return this.request("v1/whoami", identitySchema);
+  }
+
   readonly identities = {
     list: (): Promise<IdentityList> =>
       this.request("v1/identities", identityListSchema),
+
+    get: (id: string): Promise<Identity> =>
+      this.request(`v1/identities/${encodeURIComponent(id)}`, identitySchema),
 
     create: (input: CreateIdentityInput): Promise<Identity> =>
       this.request("v1/identities", identitySchema, {
@@ -99,10 +126,11 @@ export class NexoraClient {
   };
 
   readonly events = {
-    append: (input: AppendEventInput): Promise<EventEnvelope> =>
+    /** Append a non-domain note. Domain events are emitted by the API itself. */
+    note: (input: AppendNoteInput): Promise<EventEnvelope> =>
       this.request("v1/events", eventEnvelopeSchema, {
         method: "POST",
-        body: appendEventInputSchema.parse(input),
+        body: appendNoteInputSchema.parse(input),
       }),
 
     list: (query: Partial<ListEventsQuery> = {}): Promise<EventList> =>
@@ -113,11 +141,23 @@ export class NexoraClient {
   };
 
   readonly tasks = {
-    create: (input: CreateTaskInput): Promise<Task> =>
-      this.request("v1/tasks", taskSchema, {
+    create: (
+      input: CreateTaskInput,
+      options: CreateTaskOptions = {},
+    ): Promise<Task> => {
+      const headers: Record<string, string> = {};
+      if (options.idempotencyKey !== undefined) {
+        headers["Idempotency-Key"] = idempotencyKeySchema.parse(
+          options.idempotencyKey,
+        );
+      }
+
+      return this.request("v1/tasks", taskSchema, {
         method: "POST",
         body: createTaskInputSchema.parse(input),
-      }),
+        headers,
+      });
+    },
 
     get: (id: string): Promise<Task> =>
       this.request(`v1/tasks/${encodeURIComponent(id)}`, taskSchema),
@@ -132,6 +172,18 @@ export class NexoraClient {
       this.request(`v1/tasks/${encodeURIComponent(id)}/status`, taskSchema, {
         method: "POST",
         body: updateTaskStatusInputSchema.parse(input),
+      }),
+
+    assign: (id: string, input: AssignTaskInput): Promise<Task> =>
+      this.request(`v1/tasks/${encodeURIComponent(id)}/assign`, taskSchema, {
+        method: "POST",
+        body: assignTaskInputSchema.parse(input),
+      }),
+
+    claim: (id: string, input: ClaimTaskInput): Promise<Task> =>
+      this.request(`v1/tasks/${encodeURIComponent(id)}/claim`, taskSchema, {
+        method: "POST",
+        body: claimTaskInputSchema.parse(input),
       }),
   };
 
@@ -159,15 +211,28 @@ export class NexoraClient {
   };
 
   readonly permissions = {
-    list: (identityId?: string): Promise<PermissionList> =>
+    list: (
+      query: Partial<{
+        identityId: string;
+        includeRevoked: boolean;
+      }> = {},
+    ): Promise<PermissionList> =>
       this.request(
-        withQuery(
-          "v1/permissions",
-          listPermissionsQuerySchema.parse(
-            identityId === undefined ? {} : { identityId },
-          ),
-        ),
+        withQuery("v1/permissions", listPermissionsQuerySchema.parse(query)),
         permissionListSchema,
+      ),
+
+    grant: (input: GrantPermissionInput): Promise<Permission> =>
+      this.request("v1/permissions", permissionSchema, {
+        method: "POST",
+        body: grantPermissionInputSchema.parse(input),
+      }),
+
+    revoke: (id: string): Promise<Permission> =>
+      this.request(
+        `v1/permissions/${encodeURIComponent(id)}/revoke`,
+        permissionSchema,
+        { method: "POST" },
       ),
   };
 
@@ -179,6 +244,7 @@ export class NexoraClient {
     const url = new URL(path, this.baseUrl);
     const headers: Record<string, string> = {
       accept: "application/json",
+      ...options.headers,
     };
 
     if (this.apiToken !== undefined) {
@@ -243,7 +309,7 @@ export class NexoraClient {
 
 function withQuery(
   path: string,
-  query: Record<string, string | number | undefined>,
+  query: Record<string, string | number | boolean | undefined>,
 ): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {

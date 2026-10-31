@@ -36,17 +36,18 @@ export type Decision = z.infer<typeof decisionSchema>;
 export const proposeDecisionInputSchema = z.strictObject({
   title: requiredText(200),
   context: requiredText(10_000),
-  proposedBy: identifierSchema,
   adrPath: z.string().trim().max(512).nullable().default(null),
   supersedesId: identifierSchema.nullable().default(null),
   metadata: metadataSchema.default({}),
 });
-export type ProposeDecisionInput = z.infer<typeof proposeDecisionInputSchema>;
+export type ProposeDecisionInput = z.input<typeof proposeDecisionInputSchema>;
+/** Parsed decision input with defaults applied. */
+export type ProposeDecisionData = z.output<typeof proposeDecisionInputSchema>;
 
+/** The deciding identity is derived from the credential, never from the body. */
 export const decideDecisionInputSchema = z.strictObject({
   status: z.enum(["approved", "rejected"]),
   rationale: requiredText(10_000),
-  decidedBy: identifierSchema,
   expectedVersion: z.number().int().positive().optional(),
 });
 export type DecideDecisionInput = z.infer<typeof decideDecisionInputSchema>;

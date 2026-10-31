@@ -1,93 +1,31 @@
-import type {
-  AppendEventInput,
-  EventEnvelope,
-  Task,
-  TaskStatus,
-} from "@nexora/contracts";
+import type { AppendNoteInput, EventEnvelope, Identity } from "@nexora/contracts";
 import type { NexoraClient } from "@nexora/sdk-ts";
 
 /**
  * Tier A adapter surface for EV (OpenCode).
  *
- * This package deliberately contains no autonomous loop and no simulated
- * behaviour. Callers (an OpenCode tool/plugin, or EV during a session) invoke
- * these methods, which write to the real Core API and throw on failure.
+ * The actor is the identity bound to the client credential, so this class no
+ * longer accepts an identity UUID. It cannot create tasks, decisions or
+ * permissions through a raw event call: those are Core business operations and
+ * emit their own events.
+ *
+ * There is no autonomous loop and no simulated behaviour. Every method performs
+ * a real request and throws on failure.
  */
-export interface EvOpenCodeAdapterOptions {
-  client: NexoraClient;
-  /** UUID of the `ev` identity row. */
-  identityId: string;
-}
-
-export type EvEventDraft = Omit<AppendEventInput, "actorId">;
-
 export class EvOpenCodeAdapter {
-  readonly identityId: string;
   private readonly client: NexoraClient;
 
-  constructor(options: EvOpenCodeAdapterOptions) {
-    this.identityId = options.identityId;
-    this.client = options.client;
+  constructor(client: NexoraClient) {
+    this.client = client;
   }
 
-  emit(draft: EvEventDraft): Promise<EventEnvelope> {
-    return this.client.events.append({ ...draft, actorId: this.identityId });
+  /** The identity this adapter acts as, according to the server. */
+  me(): Promise<Identity> {
+    return this.client.whoami();
   }
 
-  reportTaskCreated(task: Task): Promise<EventEnvelope> {
-    return this.emit({
-      type: "task.created",
-      aggregateType: "task",
-      aggregateId: task.id,
-      payload: {
-        title: task.title,
-        status: task.status,
-        priority: task.priority,
-        assigneeId: task.assigneeId,
-        reportedBy: "ev-opencode",
-      },
-      correlationId: null,
-      causationId: null,
-      schemaVersion: 1,
-      visibility: "internal",
-    });
-  }
-
-  reportTaskStatusChanged(
-    task: Task,
-    previousStatus: TaskStatus,
-  ): Promise<EventEnvelope> {
-    return this.emit({
-      type: "task.status_changed",
-      aggregateType: "task",
-      aggregateId: task.id,
-      payload: {
-        from: previousStatus,
-        to: task.status,
-        version: task.version,
-        reportedBy: "ev-opencode",
-      },
-      correlationId: null,
-      causationId: null,
-      schemaVersion: 1,
-      visibility: "internal",
-    });
-  }
-
-  reportNote(message: string, topic?: string): Promise<EventEnvelope> {
-    return this.emit({
-      type: "system.note",
-      aggregateType: "system",
-      aggregateId: null,
-      payload: {
-        originIdentity: "ev",
-        message,
-        ...(topic === undefined ? {} : { topic }),
-      },
-      correlationId: null,
-      causationId: null,
-      schemaVersion: 1,
-      visibility: "internal",
-    });
+  /** Record a non-domain note. Domain events are emitted by the Core API. */
+  note(input: AppendNoteInput): Promise<EventEnvelope> {
+    return this.client.events.note(input);
   }
 }

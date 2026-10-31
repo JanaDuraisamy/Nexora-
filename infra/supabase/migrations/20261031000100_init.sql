@@ -14,7 +14,7 @@ create schema if not exists nexora;
 create type nexora.identity_kind as enum ('human', 'ai_agent');
 
 -- Integration tier. `owner` is Jana. `tier_a` is a direct API integration
--- (EV, NILA in Phase 0). `tier_b` is reserved for a future process bridge.
+-- (EV in Phase 0). `tier_b` is a pull-only process/extension bridge (NILA).
 -- `tier_c` is a human-relay adapter (RIN, ELIO).
 create type nexora.identity_tier as enum ('owner', 'tier_a', 'tier_b', 'tier_c');
 

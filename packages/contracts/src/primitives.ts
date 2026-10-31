@@ -27,3 +27,17 @@ export function requiredText(maxLength: number) {
 export function optionalText(maxLength: number) {
   return z.string().trim().max(maxLength);
 }
+
+/**
+ * Client-generated idempotency key. Scoped per identity and operation by the
+ * server, so two callers may safely reuse the same value.
+ */
+export const idempotencyKeySchema = z
+  .string()
+  .trim()
+  .min(8)
+  .max(200)
+  .regex(
+    /^[A-Za-z0-9._:-]+$/,
+    "Idempotency keys may contain letters, digits, '.', '_', ':' and '-'",
+  );
